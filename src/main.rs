@@ -2,6 +2,7 @@
 // Use of this source code is governed by a MIT
 // licence that can be found in the LICENCE file.
 
+use std::convert::TryInto;
 use std::io::ErrorKind;
 use std::io::Read;
 use std::io::Write;
@@ -12,6 +13,7 @@ extern crate pancurses;
 use alacritty::ansi::Processor;
 use alacritty::cli::Options;
 use alacritty::config::Config;
+use alacritty::index::{Point, Line, Column};
 use alacritty::Term;
 use alacritty::term::SizeInfo;
 use alacritty::tty;
@@ -152,6 +154,7 @@ fn new_size_info(w: i32, h: i32) -> SizeInfo {
 
 fn render_term_to_win(term: &Term, win: &Window) {
     win.clear();
+
     for cell in term.renderable_cells(&Config::default(), None, true) {
         win.mvaddch(
             (cell.line.0 as i32) + 1,
@@ -159,5 +162,12 @@ fn render_term_to_win(term: &Term, win: &Window) {
             cell.c,
         );
     }
+
+    let Point{line: Line(row), col: Column(col)} = term.cursor().point;
+    win.mv(
+        ((row + 1) as usize).try_into().unwrap(),
+        ((col + 1) as usize).try_into().unwrap(),
+    );
+
     win.refresh();
 }
