@@ -48,6 +48,9 @@ fn main() {
     let mut parser = Processor::new();
     let mut term = Term::new(&conf, size);
 
+    let border_chars = ['*', '+', '-'];
+    let mut cur_border_char = 0;
+
     let mut exit_reason: Option<String> = None;
     let mut buf = [0u8; 0x1000];
     // We would ideally avoid using labels for loop termination but we use one
@@ -62,7 +65,7 @@ fn main() {
                 for byte in &buf[..n] {
                     parser.advance(&mut term, *byte, &mut ptyf);
                 }
-                render_term_to_win(&term, &win);
+                render_term_to_win(&term, &win, border_chars[cur_border_char]);
             },
             Err(e) => {
                 let k = e.kind();
@@ -95,28 +98,34 @@ fn main() {
                         c.encode_utf8(&mut bytes[..]);
                     }
 
-                    let mut i = 0;
-                    while i < utf8_len {
-                        match ptyf.write(&bytes[..]) {
-                            Ok(0) => {
-                                exit_reason = Some(format!("PTY is unable to accept bytes"));
-                                break 'evt_loop;
-                            },
-                            Ok(n) => {
-                                i += n;
-                            },
-                            Err(e) => {
-                                let k = e.kind();
-                                if k != ErrorKind::Interrupted && k != ErrorKind::WouldBlock {
-                                    exit_reason = Some(format!(
-                                        "couldn't read from PTY (error kind: {:?}, os error: {:?}): {}",
-                                        e.kind(),
-                                        e.raw_os_error(),
-                                        e,
-                                    ));
+                    if utf8_len == 1 && bytes[0] == 4 {
+                        // We use `^D` as a trigger to change the border style.
+                        cur_border_char = (cur_border_char + 1) % border_chars.len();
+                        render_term_to_win(&term, &win, border_chars[cur_border_char]);
+                    } else {
+                        let mut i = 0;
+                        while i < utf8_len {
+                            match ptyf.write(&bytes[..]) {
+                                Ok(0) => {
+                                    exit_reason = Some(format!("PTY is unable to accept bytes"));
                                     break 'evt_loop;
-                                };
-                            },
+                                },
+                                Ok(n) => {
+                                    i += n;
+                                },
+                                Err(e) => {
+                                    let k = e.kind();
+                                    if k != ErrorKind::Interrupted && k != ErrorKind::WouldBlock {
+                                        exit_reason = Some(format!(
+                                            "couldn't read from PTY (error kind: {:?}, os error: {:?}): {}",
+                                            e.kind(),
+                                            e.raw_os_error(),
+                                            e,
+                                        ));
+                                        break 'evt_loop;
+                                    };
+                                },
+                            }
                         }
                     }
                 },
@@ -152,8 +161,18 @@ fn new_size_info(w: i32, h: i32) -> SizeInfo {
     }
 }
 
-fn render_term_to_win(term: &Term, win: &Window) {
+fn render_term_to_win(term: &Term, win: &Window, border_char: char) {
     win.clear();
+
+    let (y, x) = win.get_max_yx();
+    for i in 0..y {
+        win.mvaddch(i, 0, border_char);
+        win.mvaddch(i, x-1, border_char);
+    }
+    for i in 0..x {
+        win.mvaddch(0, i, border_char);
+        win.mvaddch(y-1, i, border_char);
+    }
 
     for cell in term.renderable_cells(&Config::default(), None, true) {
         win.mvaddch(

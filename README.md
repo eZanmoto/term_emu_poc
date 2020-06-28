@@ -8,7 +8,9 @@ This is a proof-of-concept terminal emulator. It is used to illustrate how other
 "proxy" terminal emulators (i.e. those which run further terminal emulator
 programs, such as `tmux` and `ssh`) operate.
 
-This project simply renders the "sub"-terminal with a single space of padding.
+This project simply renders the "sub"-terminal with a single-character border,
+which can be changed using `^D`. Note that this means that the terminal can't be
+exited in this way, and so `exit` or a similar mechanism must be used.
 
 Usage
 -----
