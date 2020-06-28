@@ -25,12 +25,23 @@ const OS_IO_ERROR: i32 = 5;
 
 fn main() {
     let win = pancurses::initscr();
+
+    // Characters are not rendered when they're typed, instead they're sent to
+    // the underlying terminal, which decides whether to echo them or not (by
+    // writing new characters from `ptyf`, below). An example scenario of when
+    // this comes in handy is in the case of typing backspace. Using `noecho`
+    // prevents `^?` being briefly echoed before the cursor in between the time
+    // that the backspace key was pressed and the time when the new rendering of
+    // the terminal state is received and output.
+    pancurses::noecho();
+
     // We put the window input into non-blocking mode so that `win.getch()`
     // returns `None` immediately if there is no input. This allows us to read
     // from the PTY and the the window in the same thread. Note that this
     // results in a busy loop, which should ideally be replaced by blocking
     // reads on separate threads for efficiency.
     win.nodelay(true);
+
     let (y, x) = win.get_max_yx();
     let size = new_size_info(x - 2, y - 2);
 
