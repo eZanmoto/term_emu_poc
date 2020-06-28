@@ -1,0 +1,12 @@
+[package]
+name = "tep"
+version = "0.1.0"
+authors = ["Sean Kelleher <ezanmoto@gmail.com>"]
+
+[dependencies]
+palette = "0.5.0"
+pancurses = "0.16"
+
+[dependencies.alacritty]
+git = "https://github.com/alacritty/alacritty"
+rev = "7433f45ff9c6efeb48e223e90dd4aa9ee135b5e8"
