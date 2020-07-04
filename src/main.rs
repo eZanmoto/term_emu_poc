@@ -10,7 +10,7 @@ use std::io::Write;
 extern crate alacritty;
 extern crate pancurses;
 
-use alacritty::ansi::Processor;
+use alacritty::ansi::{Color, NamedColor, Processor};
 use alacritty::cli::Options;
 use alacritty::config::Config;
 use alacritty::index::{Point, Line, Column};
@@ -18,7 +18,9 @@ use alacritty::Term;
 use alacritty::term::SizeInfo;
 use alacritty::tty;
 
+use pancurses::colorpair::ColorPair;
 use pancurses::Input;
+use pancurses::ToChtype;
 use pancurses::Window;
 
 const OS_IO_ERROR: i32 = 5;
@@ -34,6 +36,12 @@ fn main() {
     // that the backspace key was pressed and the time when the new rendering of
     // the terminal state is received and output.
     pancurses::noecho();
+
+    pancurses::start_color();
+
+    for i in 0..COLOUR_INDEXES.len()-1 {
+        pancurses::init_pair(i as i16, COLOUR_INDEXES[i], pancurses::COLOR_BLACK);
+    }
 
     // We put the window input into non-blocking mode so that `win.getch()`
     // returns `None` immediately if there is no input. This allows us to read
@@ -76,7 +84,19 @@ fn main() {
                 for byte in &buf[..n] {
                     parser.advance(&mut term, *byte, &mut ptyf);
                 }
-                render_term_to_win(&term, &win, border_chars[cur_border_char]);
+                let result = render_term_to_win(&term, &win, border_chars[cur_border_char]);
+                if let Err(err) = result {
+                    let colour_type =
+                        match err {
+                            RenderError::ColourSpecFound => "specification",
+                            RenderError::ColourIndexFound => "index",
+                        };
+                    exit_reason = Some(format!(
+                        "encountered a colour {}, which isn't currently supported",
+                        colour_type,
+                    ));
+                    break 'evt_loop;
+                }
             },
             Err(e) => {
                 let k = e.kind();
@@ -112,7 +132,19 @@ fn main() {
                     if utf8_len == 1 && bytes[0] == 4 {
                         // We use `^D` as a trigger to change the border style.
                         cur_border_char = (cur_border_char + 1) % border_chars.len();
-                        render_term_to_win(&term, &win, border_chars[cur_border_char]);
+                        let result = render_term_to_win(&term, &win, border_chars[cur_border_char]);
+                        if let Err(err) = result {
+                            let colour_type =
+                                match err {
+                                    RenderError::ColourSpecFound => "specification",
+                                    RenderError::ColourIndexFound => "index",
+                                };
+                            exit_reason = Some(format!(
+                                "encountered a colour {}, which isn't currently supported",
+                                colour_type,
+                            ));
+                            break 'evt_loop;
+                        }
                     } else {
                         let mut i = 0;
                         while i < utf8_len {
@@ -161,6 +193,26 @@ fn main() {
     }
 }
 
+const COLOUR_INDEXES: [i16; 8] = [
+    pancurses::COLOR_WHITE,
+    pancurses::COLOR_RED,
+    pancurses::COLOR_GREEN,
+    pancurses::COLOR_BLUE,
+    pancurses::COLOR_CYAN,
+    pancurses::COLOR_MAGENTA,
+    pancurses::COLOR_YELLOW,
+    pancurses::COLOR_BLACK,
+];
+
+fn get_colour_index(c: i16) -> usize {
+    for i in 1..COLOUR_INDEXES.len()-1 {
+        if c == COLOUR_INDEXES[i] {
+            return i
+        }
+    }
+    0
+}
+
 fn new_size_info(w: i32, h: i32) -> SizeInfo {
     SizeInfo {
         width: w as f32,
@@ -172,7 +224,7 @@ fn new_size_info(w: i32, h: i32) -> SizeInfo {
     }
 }
 
-fn render_term_to_win(term: &Term, win: &Window, border_char: char) {
+fn render_term_to_win(term: &Term, win: &Window, border_char: char) -> RenderResult {
     win.clear();
 
     let (y, x) = win.get_max_yx();
@@ -185,12 +237,61 @@ fn render_term_to_win(term: &Term, win: &Window, border_char: char) {
         win.mvaddch(y-1, i, border_char);
     }
 
-    for cell in term.renderable_cells(&Config::default(), None, true) {
-        win.mvaddch(
-            (cell.line.0 as i32) + 1,
-            (cell.column.0 as i32) + 1,
-            cell.c,
-        );
+    let grid = term.grid();
+    let mut line = Line(0);
+    while line < grid.num_lines() {
+        let mut col = Column(0);
+        while col < grid.num_cols() {
+            let cell = grid[line][col];
+            match cell.fg {
+                Color::Named(name) => {
+                    let c = match name {
+                        NamedColor::Background => pancurses::COLOR_BLACK,
+                        NamedColor::Black => pancurses::COLOR_BLACK,
+                        NamedColor::Blue => pancurses::COLOR_BLUE,
+                        NamedColor::BrightBlack => pancurses::COLOR_BLACK,
+                        NamedColor::BrightBlue => pancurses::COLOR_BLUE,
+                        NamedColor::BrightCyan => pancurses::COLOR_CYAN,
+                        NamedColor::BrightGreen => pancurses::COLOR_GREEN,
+                        NamedColor::BrightMagenta => pancurses::COLOR_MAGENTA,
+                        NamedColor::BrightRed => pancurses::COLOR_RED,
+                        NamedColor::BrightWhite => pancurses::COLOR_WHITE,
+                        NamedColor::BrightYellow => pancurses::COLOR_YELLOW,
+                        NamedColor::Cursor => pancurses::COLOR_BLACK,
+                        NamedColor::CursorText => pancurses::COLOR_WHITE,
+                        NamedColor::Cyan => pancurses::COLOR_CYAN,
+                        NamedColor::DimBlack => pancurses::COLOR_BLACK,
+                        NamedColor::DimBlue => pancurses::COLOR_BLUE,
+                        NamedColor::DimCyan => pancurses::COLOR_CYAN,
+                        NamedColor::DimGreen => pancurses::COLOR_GREEN,
+                        NamedColor::DimMagenta => pancurses::COLOR_MAGENTA,
+                        NamedColor::DimRed => pancurses::COLOR_RED,
+                        NamedColor::DimWhite => pancurses::COLOR_WHITE,
+                        NamedColor::DimYellow => pancurses::COLOR_YELLOW,
+                        NamedColor::Foreground => pancurses::COLOR_WHITE,
+                        NamedColor::Green => pancurses::COLOR_GREEN,
+                        NamedColor::Magenta => pancurses::COLOR_MAGENTA,
+                        NamedColor::Red => pancurses::COLOR_RED,
+                        NamedColor::White => pancurses::COLOR_WHITE,
+                        NamedColor::Yellow => pancurses::COLOR_YELLOW,
+                    };
+                    win.attrset(ColorPair(get_colour_index(c) as u8));
+                    win.mvaddch(
+                        (line.0 as i32) + 1,
+                        (col.0 as i32) + 1,
+                        cell.c.to_chtype(),
+                    );
+                },
+                Color::Spec(_) => {
+                    return Err(RenderError::ColourSpecFound);
+                },
+                Color::Indexed(_) => {
+                    return Err(RenderError::ColourIndexFound);
+                },
+            };
+            col += 1;
+        }
+        line += 1;
     }
 
     let Point{line: Line(row), col: Column(col)} = term.cursor().point;
@@ -200,4 +301,14 @@ fn render_term_to_win(term: &Term, win: &Window, border_char: char) {
     );
 
     win.refresh();
+
+    Ok(())
+}
+
+type RenderResult = Result<(), RenderError>;
+
+enum RenderError {
+    // These colour types aren't currently supported.
+    ColourSpecFound,
+    ColourIndexFound,
 }
