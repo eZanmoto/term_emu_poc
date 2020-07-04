@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["Sean Kelleher <ezanmoto@gmail.com>"]
 
 [dependencies]
-palette = "0.5.0"
 pancurses = "0.16"
 
 [dependencies.alacritty]
